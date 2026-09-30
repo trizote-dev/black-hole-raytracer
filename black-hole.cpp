@@ -1,6 +1,7 @@
 #include <fstream>
 #include <iostream>
 #include <cmath>
+#include <algorithm>
 
 struct Vec3 {
     double x, y, z;
@@ -39,7 +40,7 @@ struct Vec3 {
     }
 };
 
-    double hashDirecao(const Vec3& direcao) {
+double hashDirecao(const Vec3& direcao) {
     double valor = std::sin(direcao.x * 127.1 + direcao.y * 311.7 + direcao.z * 74.7) * 43758.5453;
     return valor - std::floor(valor);
 }
@@ -77,8 +78,14 @@ int main() {
             double u = 1.0 / r0;
             double uLinha = -(posicaoCamera.produtoEscalar(direcaoRaio)) / (r0 * paramImpacto);
 
+            Vec3 e1 = posicaoCamera.normalizado();
+            Vec3 e2 = (direcaoRaio - e1 * direcaoRaio.produtoEscalar(e1)).normalizado();
+
             bool capturado = false;
             bool atingiuDisco = false;
+
+            double phi = 0.0;
+            double raioAtual = r0;
 
             for (int passo = 0; passo < maxPassos; passo++) {
                 auto aceleracao = [raioSchwarzschild](double u) {
@@ -97,13 +104,11 @@ int main() {
                 double k4_u = uLinha + passoAngular * k3_up;
                 double k4_up = aceleracao(u + passoAngular * k3_u);
 
-                Vec3 e1 = posicaoCamera.normalizado();
-                Vec3 e2 = (direcaoRaio - e1 * direcaoRaio.produtoEscalar(e1)).normalizado();
                 u = u + (passoAngular / 6.0) * (k1_u + 2*k2_u + 2*k3_u + k4_u);
                 uLinha = uLinha + (passoAngular / 6.0) * (k1_up + 2*k2_up + 2*k3_up + k4_up);
 
-                double phi = (passo + 1) * passoAngular;
-                double raioAtual = 1.0 / u;
+                phi = (passo + 1) * passoAngular;
+                raioAtual = 1.0 / u;
                 Vec3 posicaoAtual = e1 * (raioAtual * std::cos(phi)) + e2 * (raioAtual * std::sin(phi));
 
                 if (std::abs(posicaoAtual.y) < 0.15 && raioAtual > discoRaioInterno && raioAtual < discoRaioExterno) {
@@ -124,7 +129,17 @@ int main() {
             if (capturado) {
                 r = 0; g = 0; b = 0;
             } else if (atingiuDisco) {
-                r = 255; g = 150; b = 60;
+                double posicaoNoDisco = (raioAtual - discoRaioInterno) / (discoRaioExterno - discoRaioInterno);
+                posicaoNoDisco = std::max(0.0, std::min(1.0, posicaoNoDisco));
+
+                r = int(255 - posicaoNoDisco * 40);
+                g = int(230 - posicaoNoDisco * 130);
+                b = int(200 - posicaoNoDisco * 150);
+
+                double fatorDoppler = 1.0 + 0.6 * std::sin(phi);
+                r = int(std::min(255.0, r * fatorDoppler));
+                g = int(std::min(255.0, g * fatorDoppler));
+                b = int(std::min(255.0, b * fatorDoppler));
             } else {
                 double chance = hashDirecao(direcaoOriginal);
 
