@@ -4,17 +4,6 @@
 
 struct Vec3 {
     double x, y, z;
-    double produtoEscalar(const Vec3& outro) const {
-        return x * outro.x + y * outro.y + z * outro.z;
-    }
-
-    Vec3 produtoVetorial(const Vec3& outro) const {
-        return {
-            y * outro.z - z * outro.y,
-            z * outro.x - x * outro.z,
-            x * outro.y - y * outro.x
-        };
-    }
 
     Vec3 operator+(const Vec3& outro) const {
         return { x + outro.x, y + outro.y, z + outro.z };
@@ -36,14 +25,30 @@ struct Vec3 {
         double c = comprimento();
         return { x / c, y / c, z / c };
     }
+
+    double produtoEscalar(const Vec3& outro) const {
+        return x * outro.x + y * outro.y + z * outro.z;
+    }
+
+    Vec3 produtoVetorial(const Vec3& outro) const {
+        return {
+            y * outro.z - z * outro.y,
+            z * outro.x - x * outro.z,
+            x * outro.y - y * outro.x
+        };
+    }
 };
 
 int main() {
     const int largura = 400;
     const int altura = 300;
 
-    const double distanciaCamera = 15.0;  // câmera afastada 15 unidades do buraco negro
-    const double campoDeVisao = 1.5;      // "zoom" — quanto maior, mais aberto o ângulo de visão
+    const double distanciaCamera = 15.0;   // câmera afastada 15 unidades do buraco negro
+    const double campoDeVisao = 1.5;       // "zoom" — quanto maior, mais aberto o ângulo de visão
+
+    const double raioSchwarzschild = 1.0;  // "tamanho" do buraco negro, nossa unidade de referência
+    const double passoAngular = 0.01;      // o quão fino é cada passo da simulação
+    const int maxPassos = 4000;            // limite de segurança pra não rodar pra sempre
 
     Vec3 posicaoCamera = { 0, 0, distanciaCamera };
 
@@ -52,26 +57,55 @@ int main() {
 
     for (int y = 0; y < altura; y++) {
         for (int x = 0; x < largura; x++) {
-            // Converte a posição do pixel (x, y) pra coordenadas de -1 a 1
-            double u = (2.0 * x / largura - 1.0) * (double(largura) / altura);
-            double v = 1.0 - 2.0 * y / altura;
+            double u_tela = (2.0 * x / largura - 1.0) * (double(largura) / altura);
+            double v_tela = 1.0 - 2.0 * y / altura;
 
-            // Direção do raio saindo da câmera, olhando em direção ao buraco negro (-z)
-            Vec3 direcaoRaio = { u * campoDeVisao, v * campoDeVisao, -1.0 };
+            Vec3 direcaoRaio = { u_tela * campoDeVisao, v_tela * campoDeVisao, -1.0 };
             direcaoRaio = direcaoRaio.normalizado();
 
-                        double r0 = posicaoCamera.comprimento();
+            double r0 = posicaoCamera.comprimento();
             double paramImpacto = posicaoCamera.produtoVetorial(direcaoRaio).comprimento();
 
-            // Teste: só imprime os valores do pixel bem no centro da imagem
-            if (x == largura / 2 && y == altura / 2) {
-                std::cout << "Pixel central -> r0: " << r0 << ", b: " << paramImpacto << "\n";
+            double u = 1.0 / r0;
+            double uLinha = -(posicaoCamera.produtoEscalar(direcaoRaio)) / (r0 * paramImpacto);
+
+            bool capturado = false;
+
+            for (int passo = 0; passo < maxPassos; passo++) {
+                auto aceleracao = [raioSchwarzschild](double u) {
+                    return -u + 1.5 * raioSchwarzschild * u * u;
+                };
+
+                double k1_u = uLinha;
+                double k1_up = aceleracao(u);
+
+                double k2_u = uLinha + 0.5 * passoAngular * k1_up;
+                double k2_up = aceleracao(u + 0.5 * passoAngular * k1_u);
+
+                double k3_u = uLinha + 0.5 * passoAngular * k2_up;
+                double k3_up = aceleracao(u + 0.5 * passoAngular * k2_u);
+
+                double k4_u = uLinha + passoAngular * k3_up;
+                double k4_up = aceleracao(u + passoAngular * k3_u);
+
+                u = u + (passoAngular / 6.0) * (k1_u + 2*k2_u + 2*k3_u + k4_u);
+                uLinha = uLinha + (passoAngular / 6.0) * (k1_up + 2*k2_up + 2*k3_up + k4_up);
+
+                if (u > 1.0 / raioSchwarzschild) {
+                    capturado = true;
+                    break;
+                }
+                if (u < 1.0 / (3.0 * r0)) {
+                    break;
+                }
             }
 
-            // Por enquanto, só pra visualizar: pinta baseado na direção do raio
-            int r = int((direcaoRaio.x + 1.0) * 127);
-            int g = int((direcaoRaio.y + 1.0) * 127);
-            int b = int((-direcaoRaio.z) * 255);
+            int r, g, b;
+            if (capturado) {
+                r = 0; g = 0; b = 0;
+            } else {
+                r = 20; g = 20; b = 40;
+            }
 
             arquivo << r << " " << g << " " << b << " ";
         }
